@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+
+# Function to restart Apache
+restart_apache() {
+    systemctl restart httpd
+}
+
+# Trap to catch unexpected exits and restart Apache
+trap 'restart_apache' EXIT
+
+# Check if the folder "mysqlbackup_s3_bucket" exists, if not, create it
+backup_folder="/root/mysqlbackup_s3_bucket"
+if [ ! -d "$backup_folder" ]; then
+    mkdir -p "$backup_folder"
+fi
+
+# Save the current date and time to a variable
+current_date_time=$(date +"%Y-%m-%d %H:%M:%S")
+
+# Stop httpd service
+systemctl stop httpd
+
+# Restart ntpd service
+service ntpd restart
+
+# Your existing script contents
+export PATH=/bin:/usr/bin:/usr/local/bin
+today=$(date +"%d%b%Y")
+dbName="acc"
+BUCKET_NAME=$(hostname)-pravasismalappuram
+bkpLocation="/root/mysqlbackup_s3_bucket"
+now=$(date +"at=%R")
+
+# Sleep for 10 seconds
+sleep 10
+
+takeBackup(){
+    if [[ ! -d $bkpLocation/$today ]]; then
+        mkdir -p $bkpLocation/$today
+    fi
+
+    mysqldump --add-drop-table --single-transaction --routines --triggers $dbName | gzip > $bkpLocation/$today/$dbName-$now.sql.gz
+    # Upload backup to S3 bucket
+    aws s3 cp $bkpLocation/ s3://$BUCKET_NAME/ --storage-class STANDARD_IA --recursive
+
+    # Check if upload was successful
+    if [ $? -eq 0 ]; then
+         #If upload was successful, delete backup from server
+        rm -rf $bkpLocation/*
+    else
+        # If upload failed, exit with an error message
+     #   echo "Error: Failed to upload backup to S3"
+        exit 1
+    fi
+}
+
+callMain(){
+    takeBackup
+}
+
+callMain
+
+# Stop ntpd service
+systemctl stop ntpd
+
+# Revert the date and time from the saved variable
+date -s "$current_date_time"
+

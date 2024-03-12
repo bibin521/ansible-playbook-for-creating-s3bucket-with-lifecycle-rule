@@ -1,0 +1,87 @@
+- hosts: localhost
+  tasks:
+
+    - name: Save current date and time to a variable
+      set_fact:
+        current_date_time: "{{ ansible_date_time.iso8601 }}"
+
+    - name: Install required packages
+      become: yes
+      yum:
+        name: 
+          - python3-pip
+          - ntp
+        state: present
+
+    - name: Restart NTP service
+      become: yes
+      service:
+        name: ntpd
+        state: restarted
+
+    - name: Install AWS CLI
+      become: yes
+      pip:
+        name: awscli
+        executable: pip3
+        state: present
+
+    - name: Configure AWS CLI with credentials
+      become: yes
+      command: "aws configure set aws_access_key_id {{ access_key }}"
+      vars:
+        access_key: "************"
+
+    - name: Configure AWS CLI with secret key
+      become: yes
+      command: "aws configure set aws_secret_access_key {{ secret_key }}"
+      vars:
+        secret_key: "***************************"
+
+    - name: Get hostname of remote server
+      become: yes
+      command: "cat /etc/hostname"
+      register: hostname_output
+
+    - name: Create S3 bucket in Mumbai region
+      become: yes
+      command: >
+        aws s3api create-bucket --bucket {{ hostname_output.stdout }} --region ap-south-1 --create-bucket-configuration LocationConstraint=ap-south-1
+
+    - name: Add lifecycle rule to S3 bucket
+      become: yes
+      shell: >
+        aws s3api put-bucket-lifecycle-configuration
+          --bucket "{{ hostname_output.stdout }}"
+          --lifecycle-configuration '{
+            "Rules": [{
+              "ID": "ExpireObjectsAfter10Days",
+              "Status": "Enabled",
+              "Expiration": {
+                "Days": 10
+              }
+            }]
+          }'
+      register: lifecycle_result
+
+    - name: Debug lifecycle rule result
+      debug:
+        var: lifecycle_result
+
+    - name: Create database_backup_to_s3bucket.sh script
+      become: yes
+      template:
+        src: database_backup_to_s3bucket.sh.j2
+        dest: /root/database_backup_to_s3bucket.sh
+        mode: u+x
+
+    - name: Execute database backup script
+      cron:
+        name: "execute backup script"
+        minute: 50
+        hour: 23
+        job: "/root/database_backup_to_s3bucket.sh"
+
+    - name: Revert the date and time to the saved variable
+      command: "date -s '{{ current_date_time }}'"
+

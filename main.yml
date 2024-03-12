@@ -1,0 +1,90 @@
+---
+- name: Configure server and AWS CLI
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    access_key: "******"
+    secret_key: "**********"
+
+  tasks:
+    - name: Save current date and time to a variable
+      set_fact:
+        current_datetime: "{{ ansible_date_time.iso8601 }}"
+
+    - name: Enable EPEL repository
+      become: yes
+      package:
+        name: epel-release
+        state: present
+
+    - name: Install required packages
+      become: yes
+      package:
+        name: "{{ item }}"
+        state: present
+      with_items:
+        - python3-pip
+        - ntp
+
+    - name: Restart NTP service
+      become: yes
+      service:
+        name: ntpd
+        state: restarted
+
+    - name: Upgrade pip
+      become: yes
+      pip:
+        name: pip
+        state: latest
+        executable: pip3
+
+    - name: Install AWS CLI with Python 3
+      become: yes
+      pip:
+        name: awscli
+        state: present
+        executable: pip3
+
+    - name: Configure AWS CLI
+      become: yes
+      command: aws configure set {{ item.key }} {{ item.value }}
+      with_items:
+        - { key: "aws_access_key_id", value: "{{ access_key }}" }
+        - { key: "aws_secret_access_key", value: "{{ secret_key }}" }
+
+    - name: Get hostname from file
+      become: yes
+      command: cat /etc/hostname
+      register: hostname_output
+
+    - name: Create S3 bucket
+      become: yes
+      command: >
+        aws s3api create-bucket --bucket {{ hostname_output.stdout + '-pravasismalappuram' }} --region ap-south-1 --create-bucket-configuration LocationConstraint=ap-south-1
+
+    - name: Create lifecycle rule for bucket
+      become: yes
+      command: >
+        aws s3api put-bucket-lifecycle-configuration
+        --bucket "{{ hostname_output.stdout + '-pravasismalappuram' | trim }}"
+        --lifecycle-configuration '{"Rules":[{"Expiration":{"Days":10},"ID":"Delete objects after 10 days","Filter":{"Prefix":""},"Status":"Enabled"}]}'
+    
+    - name: Create database_backup_to_s3bucket.sh script
+      become: yes
+      template:
+        src: database_backup_to_s3bucket.sh.j2
+        dest: /root/database_backup_to_s3bucket.sh
+        mode: u+x
+
+    - name: Execute database backup script
+      cron:
+        name: "execute backup script"
+        minute: 09
+        hour: 16
+        job: "/root/database_backup_to_s3bucket.sh"
+
+    - name: Revert time from saved variable
+      become: yes
+      command: date -s "{{ current_datetime }}"
+
