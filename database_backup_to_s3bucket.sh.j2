@@ -21,7 +21,7 @@ current_date_time=$(date +"%Y-%m-%d %H:%M:%S")
 systemctl stop httpd
 
 # Restart ntpd service
-service ntpd restart
+systemctl restart ntpd
 
 # Your existing script contents
 export PATH=/bin:/usr/bin:/usr/local/bin
@@ -65,4 +65,3 @@ systemctl stop ntpd
 
 # Revert the date and time from the saved variable
 date -s "$current_date_time"
-
