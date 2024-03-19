@@ -42,7 +42,7 @@ takeBackup(){
 
     mysqldump --add-drop-table --single-transaction --routines --triggers --all-databases | gzip > $bkpLocation/$hostname-$today/$hostname-$dbName-$now.sql.gz
     # Upload backup to S3 bucket
-    aws s3 cp $bkpLocation/ s3://$BUCKET_NAME/ --storage-class STANDARD --recursive
+    aws s3 cp $bkpLocation/ s3://$BUCKET_NAME/ --storage-class STANDARD-IA --recursive
 
     # Check if upload was successful
     if [ $? -eq 0 ]; then
