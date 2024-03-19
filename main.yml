@@ -1,6 +1,6 @@
 ---
 - name: Configure server and AWS CLI
-  hosts: localhost
+  hosts: webserver
   gather_facts: yes
   vars:
     access_key: "******"
